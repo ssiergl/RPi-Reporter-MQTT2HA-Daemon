@@ -1046,8 +1046,8 @@ def getMemoryDictionary():
     memoryData = OrderedDict()
     if rpi_memory_tuple != '':
         memoryData[RPI_MEM_TOTAL] = '{:.2f}'.format(rpi_memory_tuple[0])
-        memoryData[RPI_MEM_AVAIL] = '{:.2f}'.format(rpi_memory_tuple[1])
-        memoryData[RPI_MEM_FREE] = '{:.2f}'.format(rpi_memory_tuple[2])
+        memoryData[RPI_MEM_FREE] = '{:.2f}'.format(rpi_memory_tuple[1])
+        memoryData[RPI_MEM_AVAIL] = '{:.2f}'.format(rpi_memory_tuple[2])
     #print_line('memoryData:{}"'.format(memoryData), debug=True)
     return memoryData
 
