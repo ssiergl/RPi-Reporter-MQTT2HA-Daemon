@@ -100,7 +100,7 @@ The following example shows the installation under Debian/Raspbian below the `/o
 ```shell
 sudo apt-get install git python3 python3-pip python3-tzlocal python3-sdnotify python3-colorama python3-unidecode python3-paho-mqtt
 
-sudo git clone https://github.com/ironsheep/RPi-Reporter-MQTT2HA-Daemon.git /opt/RPi-Reporter-MQTT2HA-Daemon
+sudo git clone https://github.com/ssiergl/RPi-Reporter-MQTT2HA-Daemon.git /opt/RPi-Reporter-MQTT2HA-Daemon
 
 cd /opt/RPi-Reporter-MQTT2HA-Daemon
 sudo pip3 install -r requirements.txt
