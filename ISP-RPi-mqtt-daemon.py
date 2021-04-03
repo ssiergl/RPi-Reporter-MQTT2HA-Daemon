@@ -992,9 +992,9 @@ def send_status(timestamp, nothing):
     rpiData[RPI_LINUX_VERSION] = rpi_linux_version
     rpiData[RPI_UPTIME] = rpi_uptime
 
-    rpiData[RPI_LOAD_1M] = rpi_load_1m
-    rpiData[RPI_LOAD_5M] = rpi_load_5m
-    rpiData[RPI_LOAD_15M] = rpi_load_15m
+    rpiData[RPI_LOAD_1M] = float(rpi_load_1m)
+    rpiData[RPI_LOAD_5M] = float(rpi_load_5m)
+    rpiData[RPI_LOAD_15M] = float(rpi_load_15m)
 
     #  DON'T use V1 form of getting date (my dashbord mech)
     #actualDate = datetime.strptime(rpi_last_update_date, '%y%m%d%H%M%S')
@@ -1009,24 +1009,24 @@ def send_status(timestamp, nothing):
         rpiData[RPI_DATE_LAST_UPDATE] = rpi_last_update_date.astimezone().replace(microsecond=0).isoformat()
     else:
         rpiData[RPI_DATE_LAST_UPDATE] = ''
-    rpiData[RPI_FS_SPACE] = rpi_filesystem_space.replace('GB', '')+' GB'
-    rpiData[RPI_FS_AVAIL] = rpi_filesystem_percent+' %'
+    rpiData[RPI_FS_SPACE] = int(rpi_filesystem_space.replace('GB', ''),10)
+    rpiData[RPI_FS_AVAIL] = int(rpi_filesystem_percent,10)
 
     rpiRam = getMemoryDictionary()
     if len(rpiRam) > 0:
-        rpiData[RPI_MEM_TOTAL] = rpiRam[RPI_MEM_TOTAL]+' MB'
-        rpiData[RPI_MEM_AVAIL] = rpiRam[RPI_MEM_AVAIL]+' MB'
-        rpiData[RPI_MEM_FREE] = rpiRam[RPI_MEM_FREE]+' MB'
+        rpiData[RPI_MEM_TOTAL] = float(rpiRam[RPI_MEM_TOTAL])
+        rpiData[RPI_MEM_AVAIL] = float(rpiRam[RPI_MEM_AVAIL])
+        rpiData[RPI_MEM_FREE] = float(rpiRam[RPI_MEM_FREE])
 
     rpiCpu = getCPUDictionary()
     if len(rpiCpu) > 0:
         rpiData[RPI_CPU_VENDOR] = rpiCpu[RPI_CPU_VENDOR]
         rpiData[RPI_CPU_MODEL] = rpiCpu[RPI_CPU_MODEL]
         rpiData[RPI_CPU_ARCHITECTURE] = rpiCpu[RPI_CPU_ARCHITECTURE]
-        rpiData[RPI_CPU_BOGOMIPS] = rpiCpu[RPI_CPU_BOGOMIPS]
-        rpiData[RPI_CPU_CORES] = rpiCpu[RPI_CPU_CORES]
+        rpiData[RPI_CPU_BOGOMIPS] = float(rpiCpu[RPI_CPU_BOGOMIPS])
+        rpiData[RPI_CPU_CORES] = int(rpiCpu[RPI_CPU_CORES])
 
-    rpiData[RPI_CPU_TEMP] = forceSingleDigit(rpi_cpu_temp)+' °C'
+    rpiData[RPI_CPU_TEMP] = forceSingleDigit(rpi_cpu_temp)
 
     rpiData[RPI_SCRIPT] = rpi_mqtt_script.replace('.py', '')
     rpiData[SCRIPT_REPORT_INTERVAL] = interval_in_minutes
@@ -1038,7 +1038,7 @@ def send_status(timestamp, nothing):
 
 def forceSingleDigit(temperature):
     tempInterp = '{:.1f}'.format(temperature)
-    return tempInterp
+    return float(tempInterp)
 
 def getMemoryDictionary():
     # TYPICAL:
