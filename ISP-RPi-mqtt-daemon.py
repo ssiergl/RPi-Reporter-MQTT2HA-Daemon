@@ -201,8 +201,6 @@ rpi_last_update_date = datetime.min
 rpi_filesystem_space_raw = ''
 rpi_filesystem_space = ''
 rpi_filesystem_percent = ''
-rpi_system_temp = ''
-rpi_gpu_temp = ''
 rpi_cpu_temp = ''
 rpi_mqtt_script = script_info
 rpi_interfaces = []
@@ -211,8 +209,6 @@ rpi_filesystem = []
 rpi_memory_tuple = ''
 # Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
 rpi_cpu_tuple = ''
-# for thermal status reporting
-rpi_throttle_status = []
 
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
@@ -243,7 +239,7 @@ def getDeviceCpuInfo():
     #  Hardware	: BCM2835
     #  Serial		: 00000000131030c0
     #  Model		: Raspberry Pi Zero W Rev 1.1
-    out = subprocess.Popen("cat /proc/cpuinfo | egrep -i 'processor|model|bogo|hardware|serial'",
+    out = subprocess.Popen("lscpu | egrep -i 'vendor|^CPU\(s\)|model name|architecture|bogo'",
            shell=True,
            stdout=subprocess.PIPE,
            stderr=subprocess.STDOUT)
@@ -253,28 +249,28 @@ def getDeviceCpuInfo():
     for currLine in lines:
         trimmedLine = currLine.lstrip().rstrip()
         trimmedLines.append(trimmedLine)
-    cpu_hardware = ''   # 'hardware'
-    cpu_cores = 0       # count of 'processor' lines
-    cpu_model = ''      # 'model name'
-    cpu_bogoMIPS = 0.0  # sum of 'BogoMIPS' lines
-    cpu_serial = ''     # 'serial'
+    cpu_vendor = ''
+    cpu_architecture = ''
+    cpu_cores = 0
+    cpu_model = ''
+    cpu_bogomips = 0.0
     for currLine in trimmedLines:
         lineParts = currLine.split(':')
         currValue = '{?unk?}'
         if len(lineParts) >= 2:
             currValue = lineParts[1].lstrip().rstrip()
-        if 'Hardware' in currLine:
-            cpu_hardware = currValue
+        if 'Vendor' in currLine:
+            cpu_vendor = currValue
         if 'model name' in currLine:
             cpu_model = currValue
+        if 'architecture' in currLine:
+            cpu_architecture = currValue
         if 'BogoMIPS' in currLine:
-            cpu_bogoMIPS += float(currValue)
-        if 'processor' in currLine:
-                cpu_cores += 1
-        if 'Serial' in currLine:
-            cpu_serial = currValue
+            cpu_bogoMIPS = float(currValue)
+        if 'cpu' in currLine:
+            cpu_cores = float(currValue)
     # Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
-    rpi_cpu_tuple = ( cpu_hardware, cpu_model, cpu_cores, cpu_bogoMIPS, cpu_serial )
+    rpi_cpu_tuple = ( cpu_vendor, cpu_model, cpu_architecture, cpu_bogomips, cpu_cores )
     print_line('rpi_cpu_tuple=[{}]'.format(rpi_cpu_tuple), debug=True)
 
 def getDeviceMemory():
@@ -644,18 +640,6 @@ def next_power_of_2(size):
     size_as_nbr = int(size) - 1
     return 1 if size == 0 else (1<<size_as_nbr.bit_length()) / 1024
 
-def getVcGenCmd():
-    cmd_locn1 = '/usr/bin/vcgencmd'
-    cmd_locn2 = '/opt/vc/bin/vcgencmd'
-    desiredCommand = cmd_locn1
-    if os.path.exists(desiredCommand) == False:
-        desiredCommand = cmd_locn2
-    if os.path.exists(desiredCommand) == False:
-        desiredCommand = ''
-    if desiredCommand != '':
-        print_line('Found vcgencmd(1)=[{}]'.format(desiredCommand), debug=True)
-    return desiredCommand
-
 def getIPCmd():
     cmd_locn1 = '/bin/ip'
     cmd_locn2 = '/sbin/ip'
@@ -669,130 +653,16 @@ def getIPCmd():
     return desiredCommand
 
 def getSystemTemperature():
-    global rpi_system_temp
-    global rpi_gpu_temp
     global rpi_cpu_temp
-    rpi_gpu_temp_raw = 'failed'
-    cmd_fspec = getVcGenCmd()
-    if cmd_fspec == '':
-        rpi_system_temp = float('-1.0')
-        rpi_gpu_temp = float('-1.0')
-        rpi_cpu_temp = float('-1.0')
-    else:
-        retry_count = 3
-        while retry_count > 0 and 'failed' in rpi_gpu_temp_raw:
 
-            cmd_string = "{} measure_temp | /bin/sed -e 's/\\x0//g'".format(cmd_fspec)
-            out = subprocess.Popen(cmd_string,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT)
-            stdout,_ = out.communicate()
-            rpi_gpu_temp_raw = stdout.decode('utf-8').rstrip().replace('temp=', '').replace('\'C', '')
-            retry_count -= 1
-            sleep(1)
-
-        if 'failed' in rpi_gpu_temp_raw:
-            interpretedTemp = float('-1.0')
-        else:
-            interpretedTemp = float(rpi_gpu_temp_raw)
-        rpi_gpu_temp = interpretedTemp
-        print_line('rpi_gpu_temp=[{}]'.format(rpi_gpu_temp), debug=True)
-
-        out = subprocess.Popen("/bin/cat /sys/class/thermal/thermal_zone0/temp",
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT)
-        stdout,_ = out.communicate()
-        rpi_cpu_temp_raw = stdout.decode('utf-8').rstrip()
-        rpi_cpu_temp = float(rpi_cpu_temp_raw) / 1000.0
-        print_line('rpi_cpu_temp=[{}]'.format(rpi_cpu_temp), debug=True)
-
-        # fallback to CPU temp is GPU not available
-        rpi_system_temp = rpi_gpu_temp
-        if rpi_gpu_temp == -1.0:
-            rpi_system_temp = rpi_cpu_temp
-
-def getSystemThermalStatus():
-    global rpi_throttle_status
-    # sudo vcgencmd get_throttled
-    #   throttled=0x0
-    #
-    #  REF: https://harlemsquirrel.github.io/shell/2019/01/05/monitoring-raspberry-pi-power-and-thermal-issues.html
-    #
-    rpi_throttle_status = []
-    cmd_fspec = getVcGenCmd()
-    if cmd_fspec == '':
-        rpi_throttle_status.append('Not Available')
-    else:
-        cmd_string = "{} get_throttled".format(cmd_fspec)
-        out = subprocess.Popen(cmd_string,
+    out = subprocess.Popen("/bin/cat /sys/class/thermal/thermal_zone0/temp",
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT)
-        stdout,_ = out.communicate()
-        rpi_throttle_status_raw = stdout.decode('utf-8').rstrip()
-        print_line('rpi_throttle_status_raw=[{}]'.format(rpi_throttle_status_raw), debug=True)
-
-        if not 'throttled' in rpi_throttle_status_raw:
-            rpi_throttle_status.append('bad response [{}] from vcgencmd'.format(rpi_throttle_status_raw))
-        else:
-            values = []
-            lineParts = rpi_throttle_status_raw.split('=')
-            print_line('lineParts=[{}]'.format(lineParts), debug=True)
-            rpi_throttle_value_raw = ''
-            if len(lineParts) > 1:
-                rpi_throttle_value_raw = lineParts[1]
-            rpi_throttle_value = int(0)
-            if len(rpi_throttle_value_raw) > 0:
-                values.append('throttled = {}'.format(rpi_throttle_value_raw))
-                if rpi_throttle_value_raw.startswith('0x'):
-                    rpi_throttle_value = int(rpi_throttle_value_raw, 16)
-                else:
-                    rpi_throttle_value = int(rpi_throttle_value_raw, 10)
-                # decode test code
-                #rpi_throttle_value = int('0x50002', 16)
-                if rpi_throttle_value > 0:
-                    values = interpretThrottleValue(rpi_throttle_value)
-                else:
-                    values.append('Not throttled')
-            if len(values) > 0:
-                rpi_throttle_status = values
-
-    print_line('rpi_throttle_status=[{}]'.format(rpi_throttle_status), debug=True)
-
-def interpretThrottleValue(throttleValue):
-    """
-    01110000000000000010
-    ||||            ||||_ Under-voltage detected
-    ||||            |||_ Arm frequency capped
-    ||||            ||_ Currently throttled
-    ||||            |_ Soft temperature limit active
-    ||||_ Under-voltage has occurred since last reboot
-    |||_ Arm frequency capped has occurred
-    ||_ Throttling has occurred
-    |_ Soft temperature limit has occurred
-    """
-    print_line('throttleValue=[{}]'.format(bin(throttleValue)), debug=True)
-    interpResult = []
-    meanings = [
-        ( 2**0, 'Under-voltage detected' ),
-        ( 2**1, 'Arm frequency capped' ),
-        ( 2**2, 'Currently throttled' ),
-        ( 2**3, 'Soft temperature limit active' ),
-        ( 2**16, 'Under-voltage has occurred' ),
-        ( 2**17, 'Arm frequency capped has occurred' ),
-        ( 2**18, 'Throttling has occurred' ),
-        ( 2**19, 'Soft temperature limit has occurred' ),
-    ]
-
-    for meaningIndex in range(len(meanings)):
-        bitTuple = meanings[meaningIndex]
-        if throttleValue & bitTuple[0] > 0:
-            interpResult.append(bitTuple[1])
-
-    print_line('interpResult=[{}]'.format(interpResult), debug=True)
-    return interpResult
+    stdout,_ = out.communicate()
+    rpi_cpu_temp_raw = stdout.decode('utf-8').rstrip()
+    rpi_cpu_temp = float(rpi_cpu_temp_raw) / 1000.0
+    print_line('rpi_cpu_temp=[{}]'.format(rpi_cpu_temp), debug=True)
 
 def getLastUpdateDate():
     global rpi_last_update_date
@@ -1096,8 +966,6 @@ RPI_LOAD_15M = "load_15m"
 RPI_DATE_LAST_UPDATE = "last_update"
 RPI_FS_SPACE = 'root_fs_total'
 RPI_FS_AVAIL = 'root_fs_used_percent'
-RPI_SYSTEM_TEMP = "temperature"
-RPI_GPU_TEMP = "temperature_gpu"
 RPI_CPU_TEMP = "temperature_cpu"
 RPI_SCRIPT = "reporter"
 RPI_INTERFACE = "interface"
@@ -1107,13 +975,11 @@ RPI_MEM_TOTAL = "memory_size"
 RPI_MEM_AVAIL = "memory_available"
 RPI_MEM_FREE = "memory_free"
 # Tuple (Hardware, Model Name, NbrCores, Serial)
-RPI_CPU_SOC = "cpu_soc"
+RPI_CPU_VENDOR = "cpu_vendor"
 RPI_CPU_MODEL = "cpu_model"
+RPI_CPU_ARCHITECTURE= "cpu_architecture"
+RPI_CPU_BOGOMIPS = "cpu_bogomips"
 RPI_CPU_CORES = "cpu_number_of_cores"
-RPI_CPU_SERIAL = "cpu_serial"
-
-# list of throttle status
-RPI_THROTTLE = "throttle"
 
 def send_status(timestamp, nothing):
     rpiData = OrderedDict()
@@ -1154,16 +1020,12 @@ def send_status(timestamp, nothing):
 
     rpiCpu = getCPUDictionary()
     if len(rpiCpu) > 0:
-        rpiData[RPI_CPU_SOC] = rpiCpu[RPI_CPU_SOC]
+        rpiData[RPI_CPU_VENDOR] = rpiCpu[RPI_CPU_VENDOR]
         rpiData[RPI_CPU_MODEL] = rpiCpu[RPI_CPU_MODEL]
+        rpiData[RPI_CPU_ARCHITECTURE] = rpiCpu[RPI_CPU_ARCHITECTURE]
+        rpiData[RPI_CPU_BOGOMIPS] = rpiCpu[RPI_CPU_BOGOMIPS]
         rpiData[RPI_CPU_CORES] = rpiCpu[RPI_CPU_CORES]
-        rpiData[RPI_CPU_SERIAL] = rpiCpu[RPI_CPU_SERIAL]
 
-    if len(rpi_throttle_status) > 0:
-        rpiData[RPI_THROTTLE] = rpi_throttle_status
-
-    rpiData[RPI_SYSTEM_TEMP] = forceSingleDigit(rpi_system_temp)+' °C'
-    rpiData[RPI_GPU_TEMP] = forceSingleDigit(rpi_gpu_temp)+' °C'
     rpiData[RPI_CPU_TEMP] = forceSingleDigit(rpi_cpu_temp)+' °C'
 
     rpiData[RPI_SCRIPT] = rpi_mqtt_script.replace('.py', '')
@@ -1195,10 +1057,12 @@ def getCPUDictionary():
     cpuDict = OrderedDict()
     #print_line('rpi_cpu_tuple:{}"'.format(rpi_cpu_tuple), debug=True)
     if rpi_cpu_tuple != '':
-        cpuDict[RPI_CPU_SOC] = rpi_cpu_tuple[0]
+        cpuDict[RPI_CPU_VENDOR] = rpi_cpu_tuple[0]
         cpuDict[RPI_CPU_MODEL] = rpi_cpu_tuple[1]
-        cpuDict[RPI_CPU_CORES] = rpi_cpu_tuple[2]
-        cpuDict[RPI_CPU_SERIAL] = rpi_cpu_tuple[4]
+        cpuDict[RPI_CPU_ARCHITECTURE] = rpi_cpu_tuple[2]
+        cpuDict[RPI_CPU_BOGOMIPS] = rpi_cpu_tuple[3]
+        cpuDict[RPI_CPU_CORES] = rpi_cpu_tuple[4]
+
     print_line('cpuDict:{}"'.format(cpuDict), debug=True)
     return cpuDict
 
@@ -1213,7 +1077,6 @@ def update_values():
     getUptimeAndLoad()
     getFileSystemDrives()
     getSystemTemperature()
-    getSystemThermalStatus()
     getLastUpdateDate()
     getDeviceMemory()
 
