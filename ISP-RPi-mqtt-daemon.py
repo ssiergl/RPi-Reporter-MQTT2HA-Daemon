@@ -268,7 +268,7 @@ def getDeviceCpuInfo():
         if 'BogoMIPS' in currLine:
             cpu_bogomips = float(currValue)
         if 'CPU' in currLine:
-            cpu_cores = float(currValue)
+            cpu_cores = int(currValue)
     # Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
     rpi_cpu_tuple = ( cpu_vendor, cpu_model, cpu_architecture, cpu_bogomips, cpu_cores )
     print_line('rpi_cpu_tuple=[{}]'.format(rpi_cpu_tuple), debug=True)
