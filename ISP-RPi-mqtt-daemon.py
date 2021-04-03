@@ -193,6 +193,9 @@ rpi_linux_release = ''
 rpi_linux_version = ''
 rpi_uptime_raw = ''
 rpi_uptime = ''
+rpi_load_1m = ''
+rpi_load_5m = ''
+rpi_load_15m = ''
 rpi_last_update_date = datetime.min
 #rpi_last_update_date_v2 = datetime.min
 rpi_filesystem_space_raw = ''
@@ -319,19 +322,19 @@ def getDeviceModel():
     rpi_model = rpi_model_raw.replace('Raspberry ', 'R').replace('i Model ', 'i 1 Model').replace('Rev ', 'r').replace(' Plus ', '+')
 
     # now decode interfaces
-    rpi_connections = 'e,w,b' # default
+    rpi_connections = 'Ethernet, Wireless, Bluetooth' # default
     if 'Pi 3 ' in rpi_model:
         if ' A ' in rpi_model:
-            rpi_connections = 'w,b'
+            rpi_connections = 'Wireless, Bluetooth'
         else:
-            rpi_connections = 'e,w,b'
+            rpi_connections = 'Ethernet, Wireless, Bluetooth'
     elif 'Pi 2 ' in rpi_model:
-        rpi_connections = 'e'
+        rpi_connections = 'Ethernet'
     elif 'Pi 1 ' in rpi_model:
         if ' A ' in rpi_model:
             rpi_connections = ''
         else:
-            rpi_connections = 'e'
+            rpi_connections = 'Ethernet'
 
     print_line('rpi_model_raw=[{}]'.format(rpi_model_raw), debug=True)
     print_line('rpi_model=[{}]'.format(rpi_model), debug=True)
@@ -339,7 +342,7 @@ def getDeviceModel():
 
 def getLinuxRelease():
     global rpi_linux_release
-    out = subprocess.Popen("/bin/cat /etc/apt/sources.list | /bin/egrep -v '#' | /usr/bin/awk '{ print $3 }' | /bin/grep . | /usr/bin/sort -u",
+    out = subprocess.Popen("/usr/bin/lsb_release -d -s",
            shell=True,
            stdout=subprocess.PIPE,
            stderr=subprocess.STDOUT)
@@ -383,9 +386,12 @@ def getHostnames():
     print_line('rpi_fqdn=[{}]'.format(rpi_fqdn), debug=True)
     print_line('rpi_hostname=[{}]'.format(rpi_hostname), debug=True)
 
-def getUptime():
+def getUptimeAndLoad():
     global rpi_uptime_raw
     global rpi_uptime
+    global rpi_load_1m
+    global rpi_load_5m
+    global rpi_load_15m
     out = subprocess.Popen("/usr/bin/uptime",
            shell=True,
            stdout=subprocess.PIPE,
@@ -398,9 +404,18 @@ def getUptime():
     lineParts = rpi_uptime_raw.split(',')
     if('user' in lineParts[1]):
         rpi_uptime_raw = lineParts[0]
+        rpi_load_1m = lineParts[2].lstrip().split(':')[1]
+        rpi_load_5m = lineParts[3]
+        rpi_load_15m = lineParts[4]
     else:
         rpi_uptime_raw = '{}, {}'.format(lineParts[0], lineParts[1])
+        rpi_load_1m = lineParts[3].lstrip().split(':')[1]
+        rpi_load_5m = lineParts[4]
+        rpi_load_15m = lineParts[5]
     rpi_uptime = rpi_uptime_raw.replace(timeStamp, '').lstrip().replace('up ', '')
+    print_line('rpi_load_1m=[{}]'.format(rpi_load_1m), debug=True)
+    print_line('rpi_load_5m=[{}]'.format(rpi_load_5m), debug=True)
+    print_line('rpi_load_15m=[{}]'.format(rpi_load_15m), debug=True)
     print_line('rpi_uptime=[{}]'.format(rpi_uptime), debug=True)
 
 def getNetworkIFsUsingIP(ip_cmd):
@@ -541,7 +556,6 @@ def getFileSystemDrives():
     global rpi_filesystem_space_raw
     global rpi_filesystem_space
     global rpi_filesystem_percent
-    global rpi_filesystem
     out = subprocess.Popen("/bin/df -m | /usr/bin/tail -n +2 | /bin/egrep -v 'tmpfs|boot'",
             shell=True,
             stdout=subprocess.PIPE,
@@ -580,7 +594,6 @@ def getFileSystemDrives():
     # /dev/mmcblk0p1 253 55 198 22% /boot
     # tmpfs 340 0 340 0% /run/user/1000
 
-    tmpDrives = []
     for currLine in trimmedLines:
         lineParts = currLine.split()
         print_line('lineParts({})=[{}]'.format(len(lineParts), lineParts), debug=True)
@@ -617,9 +630,8 @@ def getFileSystemDrives():
             mount_point = '{} {}'.format(lineParts[mount_idx], lineParts[mount_idx + 1])
         print_line('mount_point=[{}]'.format(mount_point), debug=True)
 
-        total_size_in_gb = '{:.0f}'.format(next_power_of_2(lineParts[total_size_idx]))
-        newTuple = ( total_size_in_gb, lineParts[percent_field_index].replace('%',''),  mount_point, device )
-        tmpDrives.append(newTuple)
+        total_size = '{:.0f}'.format(next_power_of_2(lineParts[total_size_idx]))
+        newTuple = ( total_size, lineParts[percent_field_index].replace('%',''),  mount_point, device )
         print_line('newTuple=[{}]'.format(newTuple), debug=True)
         if newTuple[2] == '/':
             rpi_filesystem_space_raw = currLine
@@ -627,9 +639,6 @@ def getFileSystemDrives():
             rpi_filesystem_percent = newTuple[1]
             print_line('rpi_filesystem_space=[{}GB]'.format(newTuple[0]), debug=True)
             print_line('rpi_filesystem_percent=[{}]'.format(newTuple[1]), debug=True)
-
-    rpi_filesystem = tmpDrives
-    print_line('rpi_filesystem=[{}]'.format(rpi_filesystem), debug=True)
 
 def next_power_of_2(size):
     size_as_nbr = int(size) - 1
@@ -1078,39 +1087,30 @@ RPI_MODEL = "rpi_model"
 RPI_CONNECTIONS = "ifaces"
 RPI_HOSTNAME = "host_name"
 RPI_FQDN = "fqdn"
-RPI_LINUX_RELEASE = "ux_release"
-RPI_LINUX_VERSION = "ux_version"
+RPI_LINUX_RELEASE = "os_release"
+RPI_LINUX_VERSION = "os_kernel_version"
 RPI_UPTIME = "up_time"
+RPI_LOAD_1M = "load_1m"
+RPI_LOAD_5M = "load_5m"
+RPI_LOAD_15M = "load_15m"
 RPI_DATE_LAST_UPDATE = "last_update"
-RPI_FS_SPACE = 'fs_total_gb' # "fs_space_gbytes"
-RPI_FS_AVAIL = 'fs_free_prcnt' # "fs_available_prcnt"
-RPI_SYSTEM_TEMP = "temperature_c"
-RPI_GPU_TEMP = "temp_gpu_c"
-RPI_CPU_TEMP = "temp_cpu_c"
+RPI_FS_SPACE = 'root_fs_total'
+RPI_FS_AVAIL = 'root_fs_used_percent'
+RPI_SYSTEM_TEMP = "temperature"
+RPI_GPU_TEMP = "temperature_gpu"
+RPI_CPU_TEMP = "temperature_cpu"
 RPI_SCRIPT = "reporter"
-RPI_NETWORK = "networking"
 RPI_INTERFACE = "interface"
 SCRIPT_REPORT_INTERVAL = "report_interval"
-# new drives dictionary
-RPI_DRIVES = "drives"
-RPI_DRV_BLOCKS = "size_gb"
-RPI_DRV_USED = "used_prcnt"
-RPI_DRV_MOUNT = "mount_pt"
-RPI_DRV_DEVICE = "device"
-RPI_DRV_NFS = "device-nfs"
-RPI_DVC_IP = "ip"
-RPI_DVC_PATH = "dvc"
 # new memory dictionary
-RPI_MEMORY = "memory"
-RPI_MEM_TOTAL = "size_mb"
-RPI_MEM_FREE = "free_mb"
-# Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
-RPI_CPU = "cpu"
-RPI_CPU_HARDWARE = "hardware"
-RPI_CPU_MODEL = "model"
-RPI_CPU_CORES = "number_cores"
-RPI_CPU_BOGOMIPS = "bogo_mips"
-RPI_CPU_SERIAL = "serial"
+RPI_MEM_TOTAL = "memory_size"
+RPI_MEM_AVAIL = "memory_available"
+RPI_MEM_FREE = "memory_free"
+# Tuple (Hardware, Model Name, NbrCores, Serial)
+RPI_CPU_SOC = "cpu_soc"
+RPI_CPU_MODEL = "cpu_model"
+RPI_CPU_CORES = "cpu_number_of_cores"
+RPI_CPU_SERIAL = "cpu_serial"
 
 # list of throttle status
 RPI_THROTTLE = "throttle"
@@ -1126,6 +1126,10 @@ def send_status(timestamp, nothing):
     rpiData[RPI_LINUX_VERSION] = rpi_linux_version
     rpiData[RPI_UPTIME] = rpi_uptime
 
+    rpiData[RPI_LOAD_1M] = rpi_load_1m
+    rpiData[RPI_LOAD_5M] = rpi_load_5m
+    rpiData[RPI_LOAD_15M] = rpi_load_15m
+
     #  DON'T use V1 form of getting date (my dashbord mech)
     #actualDate = datetime.strptime(rpi_last_update_date, '%y%m%d%H%M%S')
     #actualDate.replace(tzinfo=local_tz)
@@ -1139,29 +1143,28 @@ def send_status(timestamp, nothing):
         rpiData[RPI_DATE_LAST_UPDATE] = rpi_last_update_date.astimezone().replace(microsecond=0).isoformat()
     else:
         rpiData[RPI_DATE_LAST_UPDATE] = ''
-    rpiData[RPI_FS_SPACE] = int(rpi_filesystem_space.replace('GB', ''),10)
-    rpiData[RPI_FS_AVAIL] = int(rpi_filesystem_percent,10)
-
-    rpiData[RPI_NETWORK] = getNetworkDictionary()
-
-    rpiDrives = getDrivesDictionary()
-    if len(rpiDrives) > 0:
-        rpiData[RPI_DRIVES] = rpiDrives
+    rpiData[RPI_FS_SPACE] = rpi_filesystem_space.replace('GB', '')+' GB'
+    rpiData[RPI_FS_AVAIL] = rpi_filesystem_percent+' %'
 
     rpiRam = getMemoryDictionary()
     if len(rpiRam) > 0:
-        rpiData[RPI_MEMORY] = rpiRam
+        rpiData[RPI_MEM_TOTAL] = rpiRam[RPI_MEM_TOTAL]+' MB'
+        rpiData[RPI_MEM_AVAIL] = rpiRam[RPI_MEM_AVAIL]+' MB'
+        rpiData[RPI_MEM_FREE] = rpiRam[RPI_MEM_FREE]+' MB'
 
     rpiCpu = getCPUDictionary()
     if len(rpiCpu) > 0:
-        rpiData[RPI_CPU] = rpiCpu
+        rpiData[RPI_CPU_SOC] = rpiCpu[RPI_CPU_SOC]
+        rpiData[RPI_CPU_MODEL] = rpiCpu[RPI_CPU_MODEL]
+        rpiData[RPI_CPU_CORES] = rpiCpu[RPI_CPU_CORES]
+        rpiData[RPI_CPU_SERIAL] = rpiCpu[RPI_CPU_SERIAL]
 
     if len(rpi_throttle_status) > 0:
         rpiData[RPI_THROTTLE] = rpi_throttle_status
 
-    rpiData[RPI_SYSTEM_TEMP] = forceSingleDigit(rpi_system_temp)
-    rpiData[RPI_GPU_TEMP] = forceSingleDigit(rpi_gpu_temp)
-    rpiData[RPI_CPU_TEMP] = forceSingleDigit(rpi_cpu_temp)
+    rpiData[RPI_SYSTEM_TEMP] = forceSingleDigit(rpi_system_temp)+' °C'
+    rpiData[RPI_GPU_TEMP] = forceSingleDigit(rpi_gpu_temp)+' °C'
+    rpiData[RPI_CPU_TEMP] = forceSingleDigit(rpi_cpu_temp)+' °C'
 
     rpiData[RPI_SCRIPT] = rpi_mqtt_script.replace('.py', '')
     rpiData[SCRIPT_REPORT_INTERVAL] = interval_in_minutes
@@ -1173,76 +1176,16 @@ def send_status(timestamp, nothing):
 
 def forceSingleDigit(temperature):
     tempInterp = '{:.1f}'.format(temperature)
-    return float(tempInterp)
-
-def getDrivesDictionary():
-    global rpi_filesystem
-    rpiDrives = OrderedDict()
-
-    # tuple { total blocks, used%, mountPoint, device }
-    for driveTuple in rpi_filesystem:
-        rpiSingleDrive = OrderedDict()
-        rpiSingleDrive[RPI_DRV_BLOCKS] = int(driveTuple[0])
-        rpiSingleDrive[RPI_DRV_USED] = int(driveTuple[1])
-        device = driveTuple[3]
-        if ':' in device:
-            rpiDevice = OrderedDict()
-            lineParts = device.split(':')
-            rpiDevice[RPI_DVC_IP] = lineParts[0]
-            rpiDevice[RPI_DVC_PATH] = lineParts[1]
-            rpiSingleDrive[RPI_DRV_NFS] = rpiDevice
-        else:
-            rpiSingleDrive[RPI_DRV_DEVICE] = device
-            #rpiTest = OrderedDict()
-            #rpiTest[RPI_DVC_IP] = '255.255.255.255'
-            #rpiTest[RPI_DVC_PATH] = '/srv/c2db7b94'
-            #rpiSingleDrive[RPI_DRV_NFS] = rpiTest
-        rpiSingleDrive[RPI_DRV_MOUNT] = driveTuple[2]
-        driveKey = driveTuple[2].replace('/','-').replace('-','',1)
-        if len(driveKey) == 0:
-            driveKey = "root"
-        rpiDrives[driveKey] = rpiSingleDrive
-
-        # TEST NFS
-    return rpiDrives;
-
-
-def getNetworkDictionary():
-    global rpi_interfaces
-    # TYPICAL:
-    # rpi_interfaces=[[
-    #   ('eth0', 'mac', 'b8:27:eb:1a:f3:bc'),
-    #   ('wlan0', 'IP', '192.168.100.189'),
-    #   ('wlan0', 'mac', 'b8:27:eb:4f:a6:e9')
-    # ]]
-    networkData = OrderedDict()
-
-    priorIFKey = ''
-    tmpData = OrderedDict()
-    for currTuple in rpi_interfaces:
-        currIFKey = currTuple[0]
-        if priorIFKey == '':
-            priorIFKey = currIFKey
-        if currIFKey != priorIFKey:
-            # save off prior if exists
-            if priorIFKey != '':
-                networkData[priorIFKey] = tmpData
-                tmpData = OrderedDict()
-                priorIFKey = currIFKey
-        subKey = currTuple[1]
-        subValue = currTuple[2]
-        tmpData[subKey] = subValue
-    networkData[priorIFKey] = tmpData
-    print_line('networkData:{}"'.format(networkData), debug=True)
-    return networkData
+    return tempInterp
 
 def getMemoryDictionary():
     # TYPICAL:
     #   Tuple (Total, Free, Avail.)
     memoryData = OrderedDict()
     if rpi_memory_tuple != '':
-        memoryData[RPI_MEM_TOTAL] = '{:.3f}'.format(rpi_memory_tuple[0])
-        memoryData[RPI_MEM_FREE] = '{:.3f}'.format(rpi_memory_tuple[2])
+        memoryData[RPI_MEM_TOTAL] = '{:.2f}'.format(rpi_memory_tuple[0])
+        memoryData[RPI_MEM_AVAIL] = '{:.2f}'.format(rpi_memory_tuple[1])
+        memoryData[RPI_MEM_FREE] = '{:.2f}'.format(rpi_memory_tuple[2])
     #print_line('memoryData:{}"'.format(memoryData), debug=True)
     return memoryData
 
@@ -1252,10 +1195,9 @@ def getCPUDictionary():
     cpuDict = OrderedDict()
     #print_line('rpi_cpu_tuple:{}"'.format(rpi_cpu_tuple), debug=True)
     if rpi_cpu_tuple != '':
-        cpuDict[RPI_CPU_HARDWARE] = rpi_cpu_tuple[0]
+        cpuDict[RPI_CPU_SOC] = rpi_cpu_tuple[0]
         cpuDict[RPI_CPU_MODEL] = rpi_cpu_tuple[1]
         cpuDict[RPI_CPU_CORES] = rpi_cpu_tuple[2]
-        cpuDict[RPI_CPU_BOGOMIPS] = '{:.2f}'.format(rpi_cpu_tuple[3])
         cpuDict[RPI_CPU_SERIAL] = rpi_cpu_tuple[4]
     print_line('cpuDict:{}"'.format(cpuDict), debug=True)
     return cpuDict
@@ -1268,7 +1210,7 @@ def publishMonitorData(latestData, topic):
 
 def update_values():
     # nothing here yet
-    getUptime()
+    getUptimeAndLoad()
     getFileSystemDrives()
     getSystemTemperature()
     getSystemThermalStatus()
