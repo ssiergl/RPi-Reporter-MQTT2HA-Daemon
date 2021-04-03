@@ -261,13 +261,13 @@ def getDeviceCpuInfo():
             currValue = lineParts[1].lstrip().rstrip()
         if 'Vendor' in currLine:
             cpu_vendor = currValue
-        if 'model name' in currLine:
+        if 'Model name' in currLine:
             cpu_model = currValue
-        if 'architecture' in currLine:
+        if 'Architecture' in currLine:
             cpu_architecture = currValue
         if 'BogoMIPS' in currLine:
-            cpu_bogoMIPS = float(currValue)
-        if 'cpu' in currLine:
+            cpu_bogomips = float(currValue)
+        if 'CPU' in currLine:
             cpu_cores = float(currValue)
     # Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
     rpi_cpu_tuple = ( cpu_vendor, cpu_model, cpu_architecture, cpu_bogomips, cpu_cores )
