@@ -209,6 +209,43 @@ rpi_memory_tuple = ''
 # Tuple (Hardware, Model Name, NbrCores, BogoMIPS, Serial)
 rpi_cpu_tuple = ''
 
+is_docker_installed = True # ToDo: check automatically if docker is installed
+rpi_docker_container_running_count = ''
+rpi_docker_container_total_count = ''
+rpi_docker_network_total_count = ''
+
+
+# -----------------------------------------------------------------------------
+#  collect some metrics from docker
+#
+def getDockerMetrics():
+    global rpi_docker_container_running_count
+    global rpi_docker_container_total_count
+    global rpi_docker_network_total_count
+
+    out = subprocess.Popen("docker ps -q | wc -l",
+           shell=True,
+           stdout=subprocess.PIPE,
+           stderr=subprocess.STDOUT)
+    stdout, _ = out.communicate()
+    rpi_docker_container_running_count = int(stdout.decode('utf-8').split("\n")[0])
+
+    out = subprocess.Popen("docker ps -a -q | wc -l",
+           shell=True,
+           stdout=subprocess.PIPE,
+           stderr=subprocess.STDOUT)
+    stdout, _ = out.communicate()
+    rpi_docker_container_total_count = int(stdout.decode('utf-8').split("\n")[0])
+
+    out = subprocess.Popen("docker network ls -q | wc -l",
+           shell=True,
+           stdout=subprocess.PIPE,
+           stderr=subprocess.STDOUT)
+    stdout, _ = out.communicate()
+    rpi_docker_network_total_count = int(stdout.decode('utf-8').split("\n")[0])
+
+
+
 # -----------------------------------------------------------------------------
 #  monitor variable fetch routines
 #
@@ -612,6 +649,12 @@ getLinuxRelease()
 getLinuxVersion()
 getFileSystemDrives()
 
+if is_docker_installed:
+    getDockerMetrics()
+
+
+
+
 # -----------------------------------------------------------------------------
 #  timer and timer funcs for ALIVE MQTT Notices handling
 # -----------------------------------------------------------------------------
@@ -855,6 +898,11 @@ RPI_CPU_ARCHITECTURE= "cpu_architecture"
 RPI_CPU_BOGOMIPS = "cpu_bogomips"
 RPI_CPU_CORES = "cpu_number_of_cores"
 
+RPI_DOCKER_CONTAINER_RUNNING_COUNT = "docker_container_running_count"
+RPI_DOCKER_CONTAINER_TOTAL_COUNT = "docker_container_total_count"
+RPI_DOCKER_NETWORK_TOTAL_COUNT = "docker_network_total_count"
+
+
 def send_status(timestamp, nothing):
     rpiData = OrderedDict()
     rpiData[SCRIPT_TIMESTAMP] = timestamp.astimezone().replace(microsecond=0).isoformat()
@@ -869,6 +917,11 @@ def send_status(timestamp, nothing):
     rpiData[RPI_LOAD_1M] = float(rpi_load_1m)
     rpiData[RPI_LOAD_5M] = float(rpi_load_5m)
     rpiData[RPI_LOAD_15M] = float(rpi_load_15m)
+
+    if is_docker_installed:
+        rpiData[RPI_DOCKER_CONTAINER_RUNNING_COUNT] = rpi_docker_container_running_count
+        rpiData[RPI_DOCKER_CONTAINER_TOTAL_COUNT] = rpi_docker_container_total_count
+        rpiData[RPI_DOCKER_NETWORK_TOTAL_COUNT] = rpi_docker_network_total_count
 
     #  DON'T use V1 form of getting date (my dashbord mech)
     #actualDate = datetime.strptime(rpi_last_update_date, '%y%m%d%H%M%S')

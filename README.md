@@ -85,6 +85,15 @@ The monitored topic reports the following information:
 | `cpu`       | lists the model of cpu, number of cores, etc. |
 | `memory`       | shows the total amount of RAM in MB and the available ram in MB |
 | `throttle`    | reports the throttle status value plus interpretation thereof |
+| `docker_container_running_count` | number of running containers |
+| `docker_container_total_count` | total number of containers (even stopped and exited) |
+| `docker_network_total_count` | total number of docker networks |
+
+### Docker integration
+
+If docker is installed it will be automatically detected. To get data from the docker cli we must provide the RPI Monitor daemon the rights to use the docker cli.  
+`sudo usermod -aG docker daemon`
+
 
 ## Prerequisites
 
